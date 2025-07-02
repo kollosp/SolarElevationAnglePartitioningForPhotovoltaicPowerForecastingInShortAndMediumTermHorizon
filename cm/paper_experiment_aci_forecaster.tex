@@ -1,0 +1,27 @@
+\newcommand*\WCPrediction{\begin{table}\centering\small
+\caption{The table presents the accuracy of various forecasting methods for predicting quantized qACId across datasets (PV 0, PV 1, and PV 2). It demonstrates the effectiveness of alternative prediction strategies compared to the naive forecast baseline, effectively capturing both short-term fluctuations and longer-term trends. The results highlight that RollingAverage with a 3-day window consistently achieved the best or near-best performance across the datasets, confirming that a short-term smoothing approach effectively captures weather-driven variations in qACId.}
+\label{tab:WCPrediction}
+\begin{tabular}{llr}
+\toprule
+ & Metric & accuracy \\
+\ds{} & \wc{} &  \\
+\midrule
+\multirow[t]{4}{*}{PV 0} & NaiveForecaster() & 0.598 \\
+ & RollingAverage({'N': 3}) & 0.611 \\
+ & RollingAverage({'N': 30}) & 0.594 \\
+ & ExponentialSmoothing() & 0.626 \\
+\cline{1-3}
+\multirow[t]{4}{*}{PV 1} & NaiveForecaster() & 0.825 \\
+ & RollingAverage({'N': 3}) & 0.830 \\
+ & RollingAverage({'N': 30}) & 0.838 \\
+ & ExponentialSmoothing() & 0.827 \\
+\cline{1-3}
+\multirow[t]{4}{*}{PV 2} & NaiveForecaster() & 0.692 \\
+ & RollingAverage({'N': 3}) & 0.712 \\
+ & RollingAverage({'N': 30}) & 0.710 \\
+ & ExponentialSmoothing() & 0.714 \\
+\cline{1-3}
+\bottomrule
+\end{tabular}
+\end{table}
+}
