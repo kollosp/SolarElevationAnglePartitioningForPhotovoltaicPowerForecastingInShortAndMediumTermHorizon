@@ -1,6 +1,8 @@
 import numpy as np
 from datetime import datetime
-ultraimport('__dir__/../helpers/SolarInsulation.py', 'SolarInsulation', globals=globals())
+from .SolarInsulation import SolarInsulation
+# ultraimport('__dir__/../helpers/SolarInsulation.py', 'SolarInsulation', globals=globals())
+
 
 class MetricDay:
     def __init__(self, latitude_degrees, metric):

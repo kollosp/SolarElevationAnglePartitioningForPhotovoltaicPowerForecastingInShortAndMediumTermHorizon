@@ -1,22 +1,20 @@
 import copy
+import sys
+import time
+import traceback
+from datetime import datetime
+from itertools import product
 from typing import Tuple
 if __name__ == "__main__": import __config__
 
 import numpy as np
 from dimensions import ChainDimension
 from dimensions import Elevation
-from dimensions import DayProgress
-from dimensions import OCI, VCI, ACI
-from dimensions import OCIModel
 from dimensions import SolarDayProgress
-from dimensions import Quantization
-from dimensions import MeanBySolarDay
 from dimensions import Declination
-from dimensions import MathTransform
-from dimensions import RollingAverage
-from dimensions import Vectorize
+from ANN.model_wrappers import *
 
-from itertools import product
+from utils.Plotter import Plotter
 
 import pandas as pd
 import os
@@ -32,16 +30,7 @@ from sklearn.svm import SVR
 from matplotlib import pyplot as plt
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score,mean_absolute_percentage_error, max_error
 
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense,Activation,Flatten,LSTM
-from tensorflow.keras import Input
-
-# from tensorflow.keras.wrappers.scikit_learn import KerasClassifier
-# from tensorflow.keras.utils import np_utils
-
-
 from SlidingWindowExperiment import SlidingWindowExperimentBase
-from SlidingWindowExperiment import SlidingWindowExperimentTrajectoryBase
 
 class SWE(SlidingWindowExperimentBase):
     def __init__(self, **kwargs):
@@ -53,7 +42,7 @@ class SWE(SlidingWindowExperimentBase):
         # to create new Dimension class simple extend BaseDimension in dimensions directory.
         self.chain = ChainDimension(transformers=[
             # y is always here!
-            DayProgress(dimension_name="Day%"),
+            # DayProgress(dimension_name="Day%"),
             Declination(dimension_name="Declination"),
             Elevation(
                 dimension_name="Elevation",
@@ -61,37 +50,10 @@ class SWE(SlidingWindowExperimentBase):
                 longitude_degrees=longitude_degrees),
             # Vectorize(lagged=10, step_per_lag=10, base_dimensions=["y"]),
             SolarDayProgress(
+                dimension_name="SolarDay%",
                 scale=0.01,
                 latitude_degrees=latitude_degrees,
-                longitude_degrees=longitude_degrees),
-            VCI(
-                window_size=12,
-                dimension_name="VCI"),
-            OCIModel(
-                dimension_name="OCIModel",
-                latitude_degrees=latitude_degrees,
-                longitude_degrees=longitude_degrees),
-            OCI(
-                window_size=12,
-                dimension_name="OCI",
-                base_dimensions=["OCIModel"],
-                latitude_degrees=latitude_degrees,
-                longitude_degrees=longitude_degrees),
-            ACI(window_size=12,
-                dimension_name="ACI",
-                base_dimensions=["OCI", "VCI"],
-                latitude_degrees=latitude_degrees,
-                longitude_degrees=longitude_degrees),
-            MeanBySolarDay(dimension_name="ACId", base_dimensions=["ACI"],
-                latitude_degrees=latitude_degrees,
-                longitude_degrees=longitude_degrees),
-            Quantization(k=8, dimension_name=f"qACId(8)", base_dimensions=["ACId"]),
-            Quantization(k=6, dimension_name=f"qACId(6)", base_dimensions=["ACId"]),
-            Quantization(k=4, dimension_name=f"qACId(4)", base_dimensions=["ACId"]),
-            # MeanBySolarDay(dimension_name="OCId", base_dimensions=["OCI"],
-            #     latitude_degrees=latitude_degrees,
-            #     longitude_degrees=longitude_degrees),
-            # Quantization(k=k, dimension_name=f"qOCId({k})", base_dimensions=["OCId"])
+                longitude_degrees=longitude_degrees)
         ])
 
     # method to be overwritten -
@@ -114,14 +76,15 @@ class SWE(SlidingWindowExperimentBase):
 
         return test_ds_y, test_ds_x
 
-def test(model, model_name="model", k=4, n = 10, n_steps = 28,instance=0, excluded_dims=None):
-    file_path = "/".join(os.path.abspath(__file__).split("/")[:-2] + ["../datasets/dataset.csv"])
+def test(models, models_names, instance=0, excluded_dims=None, n=None, n_steps=None):
+    """Function executes experiment for one selected configuration agains one dataset"""
+    file_path = os.sep.join(os.path.abspath(__file__).split(os.sep)[:-2] + [f"..{os.sep}datasets{os.sep}dataset.csv"])
     dataset = pd.read_csv(file_path, low_memory=False)
     # self.full_data = self.full_data[30:]
     dataset['timestamp'] = pd.to_datetime(dataset['timestamp'])
     dataset.index = dataset['timestamp']
     dataset.drop(columns=["timestamp"], inplace=True)
-    dataset = dataset[:2*360*288].loc["2020-04-18":]
+    dataset = dataset[:2*360*288].loc["2020-04-18":] #limit dataset for one year. One year for fitting one year for experiment
 
     print(dataset.columns)
 
@@ -132,62 +95,200 @@ def test(model, model_name="model", k=4, n = 10, n_steps = 28,instance=0, exclud
     df = pd.DataFrame({}, index=dataset.index)
     df["power"] = dataset[f"{instance}_Power"]
     df.fillna(0, inplace=True)
-    swe = SWE(k=k, latitude_degrees=latitude_degrees, longitude_degrees=longitude_degrees)
+    swe = SWE(latitude_degrees=latitude_degrees, longitude_degrees=longitude_degrees)
     swe.register_dataset(df)
 
     # sample model. register_model takes several arguments that configures test. Remember to set "model name" since it
     # appears in metrics as index. If you leave dimensions name not provided model will use all dimensions available in
     # chain. You can easly configure fit or predict wrapping model in class that has predict and fit methods
-    # swe.register_model(MLPRegressor(hidden_layer_sizes=(20, 20, 20), max_iter=500, random_state=0), "MLP", ["SolarDay%", "qACId"])
     excluded_dims = excluded_dims if excluded_dims is not None else []
-    dims = [d for d in swe.all_dims if not d in excluded_dims + ["OCIModel", "OCI", "VCI", "ACI", "ACId", "qACId(8)", "qACId(6)", "qACId(4)"]] # remove dims needed for calculations
-    # swe.register_model(model,model_name, dims=dims, n=n, n_step=n_steps) # reference case
-    swe.register_model(copy.deepcopy(model),model_name, dims=dims) # test case
-    # swe.register_model(create_lstm_keras_model(hidded_layers=(20, 10), input_shape=(20, len(dims)), output_shape=1),"tf::LSTM(20,10)", dims, n=20, n_step=28)
+    dims = [d for d in swe.all_dims if not d in excluded_dims] # remove dims needed for calculations
+
+
+    #register all models with proper configuration
+    for model, model_name in zip(models, models_names):
+        # swe provid  3D input for models when n and n_steps is provided as arguments. Because then is gives 2D array
+        # for each observantion the third dimension is a time of observations. Some of classical ML models can use only
+        # 2D Data as input.
+        swe.register_model(model(n,len(dims)),f"{model_name}_{instance}" , dims=dims, n=n, n_step=n_steps) # test case
 
     # select metrics for model evaluations
     swe.register_metric(mean_absolute_error, "MAE")
     swe.register_metric(mean_squared_error, "MSE")
     # swe.register_metric(mean_absolute_percentage_error, "MAPE")
-    # swe.register_metric(max_error, "ME")
+    swe.register_metric(max_error, "ME")
 
     # run test and store results in metrics_df.
-    _,metrics_df,_ = swe()
-    # store metrics in file format
-    metrics_df.to_csv(f"cm/concat_.csv")
+    predict_df,metrics_df,learning_window_length = swe()
+    predict_df = predict_df[learning_window_length:]
 
-    # display interactive charts (use keyboards arrows)
-    # plotter = swe.show_results()
-    # plotter2 = swe.show_fit_dimensions()
-    # plt.show()
+    return predict_df,metrics_df
 
-    return metrics_df
+def powerset(l):
+    for sl in product(*[[[], [i]] for i in l]):
+        yield {j for i in sl for j in i}
 
-if __name__ == "__main__":
-    n = 10
-    n_steps = 10
-    dimensions = 6 # y, Elevation, Day%, SolarDay%, Declination, qACId
+def main(models, n_values, n_steps_values, instance_values, covered_dimensions, excluded_dimensions):
+    """
+    Function consumes list of arguments that can be passed to test function. Those include models (list of models to be
+    evaluated), n_values (number of past samples to be treated as input dimensions), n_steps_values (lag size time difference between
+    following past samples), covered_dimensions (list of dimensions that can be included or excluded from experiment This
+    list cannot contains all dimensions in chain. It simply creates all possible combinations of excluding provided dims.).
+    Then for all prepared combinations functions runs test function and stores execution results in cm directory. Each
+    experimet result consists of two files. The first "concat" contains aggregated experimental data (metrics, times, etc)
+    the second file "prediction_{i}" contains generated forecasts and computed metrics for each model. Tables in files
+    are related throught "prediction_path" column.
 
-    instances = [0,1,2]
-    models = [
-        (KNeighborsRegressor(10), "KNN(10)"),
-        (make_pipeline(PolynomialFeatures(12), LinearRegression()), "LR(12)"),
-        (RandomForestRegressor(), "RF")
+    models:
+        a list of generators of sklearn or KerasWrapper models (model must follow sklearn model scheme i.e. fit, prodict functions) e.g.
+        models = [
+            (lambda *args: KNeighborsRegressor(10), "KNN(10)"),
+            (lambda n,dims: make_pipeline(PolynomialFeatures(12), LinearRegression()), "LR(12)"),
+            (lambda n,dims: RandomForestRegressor(), "RF")
+        ]
+    n_values:
+        refer to SlidingWindowExperimentBase.register_model "n" description. e.g.
+        # sklearn models cannot used 3D data so n and n_steps must be disabled. If past data should be used in model then
+        # they must be calculated as dimensions in dimension chain.
+        n_values = [
+            None #1  #, 56, 84
+        ]
+    n_steps_values:
+        refer to SlidingWindowExperimentBase.register_model "n" description e.g.
+        n_steps_values = [None]
+    instance_values:
+        a list of datasets that are available for model in dataset csv. Each test timeseries has following column
+        name structure "{instance}_Power" e.g.
+        instance_values = [
+            0, 1, 2
+        ]
+    covered_dimensions:
+        a set of dimensions that should be either included or excluded in model dimension list. Function created a powerset
+        of provided covered_dimensions (all possible subsets created from items included in a provided set). e.g.
+        covered_dimensions = {"Elevation", "y", "SolarDay%"}
+    excluded_dimensions:
+        a list of dimensions that is added for each covered_dimension combination.
+    """
+
+    # set file path name
+    timestamp = time.time()
+    ts = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d_%H_%M_%S')
+    os.makedirs("cm", exist_ok=True)
+    csv_path = f"cm/{ts}_concat_.csv"
+
+    # create all possible subsets from a given set. However, remove the last one which contains all dimensions
+    # it is meaningless to make model without any dimension
+    excluded_plus_covered_dims = list(powerset(covered_dimensions))
+    for i,_ in enumerate(excluded_plus_covered_dims):
+        excluded_plus_covered_dims[i] = list(excluded_plus_covered_dims[i]) + excluded_dimensions
+
+    experiment_configs = [
+        {"n": n, "n_steps": n_steps, "instance": instance, "excluded_dims": ed}
+        for n, n_steps, instance,ed in product(n_values, n_steps_values, instance_values, excluded_plus_covered_dims)
     ]
 
-    all_metrics = pd.DataFrame({})
-    for instance in instances:
-        for m in models:
-            metrics_df = test(
-                excluded_dims = ["y", "Day%", "Elevation", "Declination"], # solar day  + qacid
-                model = m[0],
-                model_name=m[1],
-                # n = n,
-                # n_steps = n_steps,
-                instance=instance # dataset contains data from 3 different pv power plants
+    first = True
+    for i,config in enumerate(experiment_configs):
+        print(f"Running experiment: n={config['n']}, n_steps={config['n_steps']}, instance={config['instance']}")
+        try:
+            prediction_df, metrics_df = test(
+                n=config["n"],
+                models=[m[0] for m in models],
+                models_names=[m[1] for m in models],
+                n_steps=config["n_steps"],
+                instance=config['instance'],
+                excluded_dims=config["excluded_dims"],
             )
-            metrics_df["instance"] = instance
-            all_metrics = pd.concat([all_metrics, metrics_df])
-            print(all_metrics)
 
-    print(all_metrics)
+        # expect exception in test and SWE.__call__ methods. They indicate incorrect model configuration such as
+        # no dimensions provided or incorrect dimension name.
+        except Exception as e:
+            print(f"Error running experiment: {repr(e)}")
+            traceback.print_exc()
+            sys.exc_info()
+            prediction_df = None
+            metrics_df = pd.DataFrame(index=[m[1] for m in models])
+            metrics_df["exception"] = repr(e)
+
+        for k in config:
+            metrics_df[k] = str(config[k])
+
+        base_cols = ["instance", "n", "n_steps"]
+        if "name" in metrics_df.columns:
+            base_cols = ["name"] + base_cols
+
+        if isinstance(metrics_df.columns, pd.MultiIndex):
+            metrics_df.columns = ['_'.join([str(i) for i in col if i]) for col in metrics_df.columns.values]
+
+        cols = base_cols + [col for col in metrics_df.columns if col not in base_cols]
+        metrics_df = metrics_df[cols]
+
+        predictions_path = f"cm/{ts}_prediction_{i}_.csv" #set prediction file path
+        metrics_df["prediction_path"] = predictions_path #make relation between aggregated results and predictions paths
+        metrics_df.to_csv(csv_path, mode='a', index=True, header=first)
+        if prediction_df is not None:
+            prediction_df.to_csv(predictions_path, mode='w', index=True, header=True)
+        first = False
+
+    print("Main done.")
+
+if __name__ == "__main__":
+    # main(models = [
+    #         (lambda *args: KNeighborsRegressor(10), "KNN(10)"),
+    #         (lambda *args: make_pipeline(PolynomialFeatures(12), LinearRegression()), "LR(12)"),
+    #         (lambda *args: make_pipeline(PolynomialFeatures(16), LinearRegression()), "LR(16)"),
+    #         (lambda *args: RandomForestRegressor(), "RF")
+    #     ],
+    #     instance_values = [
+    #         0, 1, 2
+    #     ],
+    #     n_values = [
+    #         None #1  #, 56, 84
+    #     ], n_steps_values = [None],
+    #     #covered_dimensions={"Elevation", "y", "SolarDay%"}
+    #     covered_dimensions={"y","SolarDay%", "Declination", "Elevation"},
+    #     excluded_dimensions=[]
+    # )
+
+    # main(models = [
+    #         (lambda n,dims,: ModelCNN(input_shape=(n,dims), output_shape=1), "CNN"),
+    #         (lambda n,dims,: ModelLSTM(input_shape=(n,dims), output_shape=1), "LSTM"),
+    #         (lambda n,dims,: ModelMLP(input_shape=(n,dims), output_shape=1), "MLP"),
+    #     ],
+    #     instance_values = [
+    #         0, 1, 2
+    #     ],
+    #     n_values = [
+    #         10, 30
+    #     ], n_steps_values = [28],
+    #     # covered_dimensions={},
+    #     covered_dimensions={"y", "Declination", "SolarDay%", "Elevation"},
+    #     excluded_dimensions=[]
+    # )
+
+    main(models=[
+        #(lambda n, dims,: DeepResidualCNN_ComplexV2(input_shape=(n, dims), output_shape=1), "DeepResidualCNN_ComplexV2"),
+        #(lambda n, dims,: DeepResidualCNN_Regularized(input_shape=(n, dims), output_shape=1), "DeepResidualCNN_Regularized"),
+        #(lambda n, dims,: DeepMLP_ComplexV1(input_shape=(n, dims), output_shape=1), "DeepMLP_ComplexV1"),
+        #(lambda n, dims,: DeepMLP_ComplexV2(input_shape=(n, dims), output_shape=1), "DeepMLP_ComplexV2"),
+        (lambda n, dims,: EnsembleNetwork(input_shape=(n, dims), output_shape=1), "EnsembleNetwork"),
+        (lambda n, dims,: TransformerEncoder(input_shape=(n, dims), output_shape=1), "TransformerEncoder"),
+        (lambda n, dims,: DenseResNet(input_shape=(n, dims), output_shape=1), "DenseResNet"),
+        (lambda n, dims,: AttentionLSTM(input_shape=(n, dims), output_shape=1), "AttentionLSTM"),
+        (lambda n, dims,: AdvancedHybrid(input_shape=(n, dims), output_shape=1), "AdvancedHybrid"),
+        (lambda n, dims,: BidirectionalLSTM(input_shape=(n, dims), output_shape=1), "BidirectionalLSTM"),
+        (lambda n, dims,: DeepMLP(input_shape=(n, dims), output_shape=1), "DeepMLP"),
+        (lambda n, dims,: HybridCNNLSTM(input_shape=(n, dims), output_shape=1), "HybridCNNLSTM"),
+        (lambda n, dims,: BasicGRU(input_shape=(n, dims), output_shape=1), "BasicGRU")
+    ],
+        instance_values=[
+            0
+        ],
+        n_values=[
+            10
+        ], n_steps_values=[28],
+        # covered_dimensions={},
+        covered_dimensions={"y", "Declination", "SolarDay%", "Elevation"},
+        excluded_dimensions=[]
+    )
+

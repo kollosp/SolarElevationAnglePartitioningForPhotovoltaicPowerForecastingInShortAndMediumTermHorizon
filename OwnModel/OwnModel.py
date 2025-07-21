@@ -1,15 +1,11 @@
-import sys, ultraimport
+import sys
 import traceback
 from datetime import datetime
 import numpy as np
-ultraimport('__dir__/../../helpers/SolarInsulation.py', 'SolarInsulation', globals=globals())
-ultraimport('__dir__/../../helpers/TimestampsProcessing.py', 'TimestampsProcessing', globals=globals())
-ultraimport('__dir__/../../helpers/MTimeSeries.py', 'MTimeSeries', globals=globals())
-ultraimport('__dir__/../../helpers/TimeSeries.py', 'TimeSeries', globals=globals())
-ultraimport('__dir__/../../helpers/StandardStorage.py', 'StandardStorage', globals=globals())
-ultraimport('__dir__/../../helpers/StandardStorage.py', 'read_csv_database_file', globals=globals())
-ultraimport('__dir__/BaseModel.py', 'ModelBaseClass', globals=globals())
-ultraimport('__dir__/BaseModel.py', 'PredictionResults', globals=globals())
+import pandas as pd
+
+from helpers import SolarInsulation, TimestampsProcessing, TimeSeries, MTimeSeries, TimeSeriesSamplingConverter
+from BaseModel import ModelBaseClass
 
 import matplotlib.pyplot as plt
 
@@ -170,33 +166,33 @@ class OwnModel(ModelBaseClass):
 
             self._phi["extremes"][name] = policy
 
-    def _predict(self, windows):
+    def _predict(self, windows : pd.Series):
+        timestamps = windows.index.to_numpy().astype('datetime64[s]').astype('int') # load timestamps from pd.Series.
         tssc = self.tssc
         self.check_fitted()
 
         # self._predict_horizon if path forecasting. Else 1
-        timestampses = np.zeros((len(windows), self.effective_predict_horizon))
+        # timestampses = np.zeros((len(windows), self.effective_predict_horizon))
 
-        timestampses[:, 0] = [w.timestamps[-1] for w in windows]
+        # timestampses[:, 0] = [w.timestamps[-1] for w in windows]
 
-        for i in range(len(windows)):
-            for j in range(self.effective_predict_horizon):
-                timestampses[i, self.effective_predict_horizon - j - 1] = \
-                    (self._predict_horizon - j)*tssc.sampling_interval_seconds + timestampses[i, 0]
+        # for i in range(len(windows)):
+        #     for j in range(self.effective_predict_horizon):
+        #         timestampses[i, self.effective_predict_horizon - j - 1] = \
+        #             (self._predict_horizon - j)*tssc.sampling_interval_seconds + timestampses[i, 0]
 
-        timestampses = np.array([timestampses]).reshape((len(windows), self.effective_predict_horizon))
+        # timestampses = np.array([timestampses]).reshape((len(windows), self.effective_predict_horizon))
 
-        ret = np.zeros((len(windows), self.effective_predict_horizon))
+        ret = np.zeros((len(windows)))
         #ret = np.array([[0.0] * self.predict_horizon]).reshape(-1,1)
 
         # store parameters during processing
         previous_ts, previous_bin = 0,0
         next_ts, next_bin = 0,0
 
-        for i, xx in enumerate(timestampses):
+        for i, current_ts in enumerate(timestamps):
             try:
-                for j,x in enumerate(xx):
-                    current_ts = x
+                for _ in [1]:
                     if self._distribution_method == OwnModel.DISPATCH_SOLAR_ELEVATION:
                         tmp = SolarInsulation.elevation(np.array([current_ts]),
                                                          latitude_degrees=self._latitude_degrees,
@@ -229,24 +225,24 @@ class OwnModel(ModelBaseClass):
                         next_extreme = self._phi["extremes"][f"{str(next_bin)}"][0]
                         # according to extremes
 
-                        ret[i, j] = previous_extreme + percent * (next_extreme - previous_extreme)
+                        ret[i] = previous_extreme + percent * (next_extreme - previous_extreme)
                     else:
-                        ret[i, j] = self._phi["extremes"][f"{str(current_bin)}"][0]
+                        ret[i] = self._phi["extremes"][f"{str(current_bin)}"][0]
 
-                # adjust scale
-                if self._scale_adjustment:
-                    scale_adjust_point = np.mean(windows[i].data[1:])
-                    s = scale_adjust_point / ret[i,0] if ret[i,0] > 0 else 1
-                    # bias = ret[i,0]
-                    # ret[i] = (ret[i] - bias) * s + bias
-                    ret[i] = ret[i] * s
+                # # adjust scale
+                # if self._scale_adjustment:
+                #     scale_adjust_point = np.mean(windows[i].data[1:])
+                #     s = scale_adjust_point / ret[i,0] if ret[i,0] > 0 else 1
+                #     # bias = ret[i,0]
+                #     # ret[i] = (ret[i] - bias) * s + bias
+                #     ret[i] = ret[i] * s
 
                 # adjust beginning to last sample
-                if self._translation_adjustment:
-                    translation_adjust_point = windows[i].data[-1]
-                    ret[i] = ret[i] - (ret[i, 0] - translation_adjust_point)
-                ret[i, ret[i] < 0] = 0
-                ret[i, ret[i] > self._max] = self._max
+                # if self._translation_adjustment:
+                #     translation_adjust_point = windows[i].data[-1]
+                #     ret[i] = ret[i] - (ret[i, 0] - translation_adjust_point)
+                # ret[i, ret[i] < 0] = 0
+                # ret[i, ret[i] > self._max] = self._max
             except KeyError as error:
                 ret[i, 0] = 0
 
@@ -257,7 +253,7 @@ class OwnModel(ModelBaseClass):
                 # if column not found then none data are available (maybe learning data too short).
                 ret[i, 0] = 0
 
-        return PredictionResults(ret, lower=None, upper=None)
+        return pd.Series(data=ret, index=windows.index)
 
     def check_fitted(self):
         if not self._is_learnt:

@@ -1,18 +1,15 @@
 from itertools import product
 from typing import Tuple
-if __name__ == "__main__": import __config__
+if __name__ == "__main__": pass
 
-import numpy as np
 import pandas as pd
 import os
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 
-from dimensions import ChainDimension, Elevation, DayProgress
-from dimensions import SolarDayProgress, Quantization, MeanBySolarDay
-from dimensions import Declination
+from dimensions import ChainDimension, Elevation
 
 from SlidingWindowExperiment import SlidingWindowExperimentBase
-from model_wrappers import *
+from ANN.model_wrappers import *
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -56,7 +53,7 @@ class SWE(SlidingWindowExperimentBase):
         return test_ds_y, test_ds_x
 
 def test(n=10, n_steps=28, instance=0):
-    file_path = "/".join(os.path.abspath(__file__).split("/")[:-2] + ["../datasets/dataset.csv"])
+    file_path = os.sep.join(os.path.abspath(__file__).split(os.sep)[:-2] + [f"..{os.sep}datasets{os.sep}dataset.csv"])
     dataset = pd.read_csv(file_path, low_memory=False)
     dataset['timestamp'] = pd.to_datetime(dataset['timestamp'])
     dataset.index = dataset['timestamp']
@@ -105,14 +102,15 @@ def test(n=10, n_steps=28, instance=0):
     return metrics_df
 
 if __name__ == "__main__":
-    k_values = [100]
-    n_values = [10, 28, 56, 84]
+    n_values = [
+        10, 28#, 56, 84
+    ]
     n_steps_values = [10]
     instance_values = [0, 1, 2]
 
     experiment_configs = [
         {"n": n, "n_steps": n_steps, "instance": instance}
-        for k, n, n_steps, instance in product(k_values, n_values, n_steps_values, instance_values)
+        for n, n_steps, instance in product(n_values, n_steps_values, instance_values)
     ]
 
     csv_path = "cm/past_all_experiments_concat__new_cnn.csv"
@@ -121,6 +119,7 @@ if __name__ == "__main__":
     for config in experiment_configs:
         try:
             print(f"Running experiment: n={config['n']}, n_steps={config['n_steps']}, instance={config['instance']}")
+
             metrics_df = test(
                 n=config["n"],
                 n_steps=config["n_steps"],

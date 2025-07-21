@@ -1,9 +1,11 @@
 import numpy as np
-import ultraimport
+#import ultraimport
 import math
 import matplotlib.pyplot as plt
-ultraimport('__dir__/../helpers/MTimeSeries.py', 'MTimeSeries', globals=globals())
-ultraimport('__dir__/../helpers/TimeSeries.py', 'TimeSeries', globals=globals())
+from .MTimeSeries import MTimeSeries
+from .TimeSeries import TimeSeries
+# ultraimport('__dir__/../helpers/MTimeSeries.py', 'MTimeSeries', globals=globals())
+# ultraimport('__dir__/../helpers/TimeSeries.py', 'TimeSeries', globals=globals())
 from matplotlib.axis import Axis
 from sklearn.neighbors import KernelDensity
 

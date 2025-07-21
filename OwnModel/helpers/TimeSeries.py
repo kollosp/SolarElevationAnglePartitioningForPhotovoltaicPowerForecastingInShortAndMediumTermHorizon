@@ -1,12 +1,16 @@
 
 import numpy as np
 import numbers
-import ultraimport
+# import ultraimport
 from numbers import Number
-ultraimport('__dir__/../helpers/ArraySlider.py', 'ArraySlider', globals=globals())
-ultraimport('__dir__/../helpers/StandardStorage.py', 'StandardStorage', globals=globals())
-ultraimport('__dir__/../helpers/TimeSeriesDataset.py', 'TimeSeriesDataset', globals=globals())
-ultraimport('__dir__/../helpers/TimeSeriesDataset.py', 'TimeSeriesDatasetXY', globals=globals())
+from .ArraySlider import ArraySlider
+from .StandardStorage import StandardStorage
+from .TimeSeriesDataset import TimeSeriesDataset
+from .TimeSeriesDataset import TimeSeriesDatasetXY
+# ultraimport('__dir__/../helpers/ArraySlider.py', 'ArraySlider', globals=globals())
+# ultraimport('__dir__/../helpers/StandardStorage.py', 'StandardStorage', globals=globals())
+# ultraimport('__dir__/../helpers/TimeSeriesDataset.py', 'TimeSeriesDataset', globals=globals())
+# ultraimport('__dir__/../helpers/TimeSeriesDataset.py', 'TimeSeriesDatasetXY', globals=globals())
 import matplotlib.pyplot as plt
 from statsmodels.tsa import stattools
 from datetime import datetime

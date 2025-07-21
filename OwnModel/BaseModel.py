@@ -1,14 +1,23 @@
-import sys, ultraimport
+import sys #, ultraimport
 import traceback
 from datetime import datetime
 import numpy as np
 from hashlib import md5
 import os
-ultraimport('__dir__/../../helpers/SolarInsulation.py', 'SolarInsulation', globals=globals())
-ultraimport('__dir__/../../helpers/MTimeSeries.py', 'MTimeSeries', globals=globals())
-ultraimport('__dir__/../../helpers/TimeSeries.py', 'TimeSeries', globals=globals())
-ultraimport('__dir__/../../helpers/StandardStorage.py', 'StandardStorage', globals=globals())
-ultraimport('__dir__/../../helpers/StandardStorage.py', 'read_csv_database_file', globals=globals())
+
+import pandas as pd
+
+from helpers.SolarInsulation import SolarInsulation
+from helpers.MTimeSeries import MTimeSeries
+from helpers.TimeSeries import TimeSeriesDataset, TimeSeries, TimeSeriesSamplingConverter
+from helpers.StandardStorage import StandardStorage
+from helpers.StandardStorage import read_csv_database_file
+
+# ultraimport('__dir__/../../helpers/SolarInsulation.py', 'SolarInsulation', globals=globals())
+# ultraimport('__dir__/../../helpers/MTimeSeries.py', 'MTimeSeries', globals=globals())
+# ultraimport('__dir__/../../helpers/TimeSeries.py', 'TimeSeries', globals=globals())
+# ultraimport('__dir__/../../helpers/StandardStorage.py', 'StandardStorage', globals=globals())
+# ultraimport('__dir__/../../helpers/StandardStorage.py', 'read_csv_database_file', globals=globals())
 
 class PredictionResult:
     """
@@ -119,7 +128,7 @@ class ModelBaseClass:
             "v": version if version is not None else self.version()
         }
         self._predict_horizon = None
-        self._time_series_sampling_converter = None
+        self._time_series_sampling_converter = TimeSeriesSamplingConverter()
         self._prediction_mode = 0 # 0 - path forecasting
                                   # 1 - step ahead forecasting
 
@@ -153,43 +162,46 @@ class ModelBaseClass:
         m_time = os.path.getmtime(path)
         return datetime.fromtimestamp(m_time).strftime('%Y%m%d%H%M%S')
 
-    def fit(self, window, predict_horizon=None, time_series_sampling_converter=None):
+    def fit(self, window :pd.Series, predict_horizon=None):
+        """
+            window: pd.Series instance that will be used for model fitting. It will be
+            cast to TimeSeries to ensure API consistency.
+        """
+        window = TimeSeries.from_numpy(window.to_numpy(), timestamps=window.index.to_numpy().astype('datetime64[s]').astype('int'), name=window.name)
         if predict_horizon is not None:
             self._predict_horizon = predict_horizon
-        self._time_series_sampling_converter = time_series_sampling_converter
         return self._fit(window)
 
-    def predict(self, windows, predict_horizon=None, time_series_sampling_converter=None):
+    def predict(self, windows : pd.Series, predict_horizon=None):
         """
         windows is list of windows (timeseries) where each window inside has size bigger then predict_horizon
         """
+
         if predict_horizon is not None:
             self._predict_horizon = predict_horizon
-        self._time_series_sampling_converter = time_series_sampling_converter
 
         #ret value should be PredictionResults
         ret_value = self._predict(windows)
+        return ret_value
 
-        ph = self.predict_horizon if self.is_path_forecasting else 1
-
-        try:
-            #chech correctness of produced response
-            if len(ret_value.shape) == 2 and ret_value.shape[0] == len(windows) and ret_value.shape[1] == ph:
-                return ret_value
-
-        except Exception as e:
-            print(e)
-            print(traceback.format_exc())
-            raise RuntimeError(f"{self.param_string()}.predict - incorrect return value from overwritten _predict function! "
-                               f"returned type is {type(ret_value)} should be PredictionResults, len(ret_value.shape) == {len(ret_value.shape)} shoud be 2 "
-                               f"ret_value.shape[0] == {ret_value.shape[0]} shoud be {len(windows)}, ret_value.shape[1] == {ret_value.shape[1]} should be {ph}")
-
-
-        raise RuntimeError(
-            f"{self.param_string()}.predict - incorrect returned array structure form overwritten _predict function. "
-            "Condition not met: len(ret_value.shape) == 2 and ret_value.shape[0] == len(windows) and ret_value.shape[1] == self.predict_horizon "
-            "for 'path forecasting' or 1 if 'step ahead forecasting'. "
-            f"Returned: len(ret_value.shape) == {len(ret_value.shape)}, ret_value.shape == {ret_value.shape} should be {(len(windows), ph)} ")
+        # try:
+        #     #chech correctness of produced response
+        #     if len(ret_value.shape) == 2 and ret_value.shape[0] == len(windows) and ret_value.shape[1] == ph:
+        #         return ret_value
+        #
+        # except Exception as e:
+        #     print(e)
+        #     print(traceback.format_exc())
+        #     raise RuntimeError(f"{self.param_string()}.predict - incorrect return value from overwritten _predict function! "
+        #                        f"returned type is {type(ret_value)} should be PredictionResults, len(ret_value.shape) == {len(ret_value.shape)} shoud be 2 "
+        #                        f"ret_value.shape[0] == {ret_value.shape[0]} shoud be {len(windows)}, ret_value.shape[1] == {ret_value.shape[1]} should be {ph}")
+        #
+        #
+        # raise RuntimeError(
+        #     f"{self.param_string()}.predict - incorrect returned array structure form overwritten _predict function. "
+        #     "Condition not met: len(ret_value.shape) == 2 and ret_value.shape[0] == len(windows) and ret_value.shape[1] == self.predict_horizon "
+        #     "for 'path forecasting' or 1 if 'step ahead forecasting'. "
+        #     f"Returned: len(ret_value.shape) == {len(ret_value.shape)}, ret_value.shape == {ret_value.shape} should be {(len(windows), ph)} ")
 
     def predict_param(self, data, time_series_sampling_converter=None):
         # ret value should be np array
@@ -227,15 +239,12 @@ class ModelBaseClass:
     def _predict(self, data):
         """
         function predicts future values.
-        data = [[timestamp, ts[i-1], ts[i-2], ..., ts[i-n]],[timestamp, ...], ... , [..]]
-            data[j] contains an list of arguments for model. The first element is timestamp. Following elements are past
-            data starting from the newest ending with the oldest (in this case i-index define nuber of past data).
         :return: numpy 2d array at size of len(data) x self.predict_horizon where in each row future values are stored. The
                  higher index the more distant data
         """
 
         # default Model is identity (AR(1))
-        return np.array([[data[i, -1] for _ in range(self.predict_horizon)] for i in range(data.shape[0])])
+        return np.array([[1 for _ in range(self.predict_horizon)] for i in range(data.shape[0])])
 
     @property
     def predict_horizon(self):

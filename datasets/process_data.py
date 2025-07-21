@@ -24,9 +24,10 @@ def print_full(x):
     pd.reset_option('display.max_colwidth')
 
 if __name__ == "__main__":
-    file_path = "/".join(os.path.abspath(__file__).split("/")[:-1])
+    file_path = os.sep.join(os.path.abspath(__file__).split(os.sep)[:-1])
     file = os.path.join(file_path, "orgdataset.csv")
-    logger.info(f"Loading file: {file}")
+    #logger.info(f"Loading file: {file}")
+    print(f"Loading file: {os.path.abspath(__file__)}")
     df = pd.read_csv(file, delimiter=",", header=None,names=["timestamp", "id", "Power", "L1V", "L2V", "L3V"])
     df.dropna(inplace=True)
     df['timestamp'] = pd.to_datetime(df['timestamp'])

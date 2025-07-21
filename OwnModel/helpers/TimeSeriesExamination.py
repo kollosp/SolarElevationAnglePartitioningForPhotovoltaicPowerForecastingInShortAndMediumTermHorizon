@@ -1,13 +1,18 @@
 import numpy as np
 import numbers
-import ultraimport
+# import ultraimport
 from numbers import Number
 from sklearn.metrics import r2_score
-ultraimport('__dir__/../helpers/MTimeSeries.py', 'MTimeSeries', globals=globals())
-ultraimport('__dir__/../helpers/TimeSeries.py', 'TimeSeries', globals=globals())
-ultraimport('__dir__/../helpers/StandardStorage.py', 'StandardStorage', globals=globals())
-ultraimport('__dir__/../helpers/StandardStorage.py', 'read_csv_database_file', globals=globals())
-ultraimport('__dir__/../helpers/TableWriter.py', 'TablePrinter', globals=globals())
+from .MTimeSeries import MTimeSeries
+from .TimeSeries import TimeSeries
+from .StandardStorage import StandardStorage
+from .StandardStorage import read_csv_database_file
+from .TableWriter import TablePrinter
+# ultraimport('__dir__/../helpers/MTimeSeries.py', 'MTimeSeries', globals=globals())
+# ultraimport('__dir__/../helpers/TimeSeries.py', 'TimeSeries', globals=globals())
+# ultraimport('__dir__/../helpers/StandardStorage.py', 'StandardStorage', globals=globals())
+# ultraimport('__dir__/../helpers/StandardStorage.py', 'read_csv_database_file', globals=globals())
+# ultraimport('__dir__/../helpers/TableWriter.py', 'TablePrinter', globals=globals())
 from datetime import datetime
 from math import floor
 import time

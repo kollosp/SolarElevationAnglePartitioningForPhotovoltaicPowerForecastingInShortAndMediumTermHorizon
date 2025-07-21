@@ -1,9 +1,10 @@
 import numpy as np
-import ultraimport
+# import ultraimport
 import sys
-ultraimport('__dir__/../helpers/TimeSeries.py', 'TimeSeries', globals=globals())
-ultraimport('__dir__/../helpers/StandardStorage.py', 'StandardStorage', globals=globals())
-TimeSeries = TimeSeries
+# ultraimport('__dir__/../helpers/TimeSeries.py', 'TimeSeries', globals=globals())
+# ultraimport('__dir__/../helpers/StandardStorage.py', 'StandardStorage', globals=globals())
+from .TimeSeries import TimeSeries
+from .StandardStorage import StandardStorage
 import matplotlib.pyplot as plt
 
 
@@ -31,8 +32,6 @@ def period_bins_transformer(timeSeries, period=10, bins=10):
         ts[i::bins]
         for i in range(0, bins, 1)
     ]
-
-
 
     return tss
 
