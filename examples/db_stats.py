@@ -3,10 +3,14 @@ import pandas as pd
 import os
 from functools import reduce
 from utils.DataframeChainProcessor import DataframeChainProcessor
-
+import argparse
 
 if __name__ == "__main__":
-    """Script to check dataset properties"""
+    parser = argparse.ArgumentParser(
+        prog='Database properties analysis',
+        description='Script reads database csv and check is properties. It generates latex table as response.')
+    args = parser.parse_args()
+
     file_path = os.sep.join(os.path.abspath(__file__).split(os.sep)[:-1] + [f"..{os.sep}datasets{os.sep}dataset.csv"])
     dataset = pd.read_csv(file_path, low_memory=False)
     # self.full_data = self.full_data[30:]

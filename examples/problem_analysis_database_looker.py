@@ -6,6 +6,7 @@ from dimensions import Elevation
 from matplotlib import pyplot as plt
 
 from utils.Plotter import Plotter
+import argparse
 
 def print_full(x):
     pd.set_option('display.max_rows', None)
@@ -21,6 +22,13 @@ def print_full(x):
     pd.reset_option('display.max_colwidth')
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        prog='Database looker',
+        description='This script displays an interactive matplotlib graph that shows data sets. If the graph window '
+                    'is focused then arrows can be used to slide forward and backward in the graph.')
+    args = parser.parse_args()
+    parser.print_help()
+
     file_path = "/".join(os.path.abspath(__file__).split("/")[:-2] + ["datasets/dataset.csv"])
     df = pd.read_csv(file_path, low_memory=False)
     # self.full_data = self.full_data[30:]

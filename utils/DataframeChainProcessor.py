@@ -11,6 +11,10 @@ class DataframeChainProcessor:
         df_new = func(df)
         if step_name[0] != "_":
             print(step_name)
+            if hasattr(df_new,"columns"):
+                print("Columns:", df_new.columns.tolist())
+            if hasattr(df_new,"shape"):
+                print("Shape:", df_new.shape)
             print(df_new)
             print("============")
         self.steps[step_name] = df_new

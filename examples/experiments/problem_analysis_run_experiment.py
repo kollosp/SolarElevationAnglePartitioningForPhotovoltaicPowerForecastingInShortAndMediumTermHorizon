@@ -13,31 +13,26 @@ from dimensions import Elevation
 from dimensions import SolarDayProgress
 from dimensions import Declination
 from ANN.model_wrappers import *
-
-from utils.Plotter import Plotter
-
 import pandas as pd
 import os
-
-from sklearn.neural_network import MLPRegressor
 from sklearn.preprocessing import PolynomialFeatures
 from sklearn.pipeline import make_pipeline
 from sklearn.linear_model import LinearRegression
-from sklearn.tree import DecisionTreeRegressor
 from sklearn.neighbors import KNeighborsRegressor
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.svm import SVR
-from matplotlib import pyplot as plt
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score,mean_absolute_percentage_error, max_error
-
+from sklearn.metrics import mean_absolute_error, mean_squared_error, max_error
 from SlidingWindowExperiment import SlidingWindowExperimentBase
+import argparse
 
 class SWE(SlidingWindowExperimentBase):
     def __init__(self, **kwargs):
+        """
+        kwargs: forecasting_horizon default 288
+        """
         super(SWE, self).__init__(**kwargs)
         latitude_degrees = kwargs.get("latitude_degrees")
         longitude_degrees = kwargs.get("longitude_degrees")
-        #self.chain is dimension generator. Each class (object) in transformer array creates at least one additional
+        # self.chain is dimension generator. Each class (object) in transformer array creates at least one additional
         # column in returned array. Column is named by "dimension_name" and may be referenced by name in SWE call.
         # to create new Dimension class simple extend BaseDimension in dimensions directory.
         self.chain = ChainDimension(transformers=[
@@ -76,7 +71,7 @@ class SWE(SlidingWindowExperimentBase):
 
         return test_ds_y, test_ds_x
 
-def test(models, models_names, instance=0, excluded_dims=None, n=None, n_steps=None):
+def test(forecasting_horizon, prediction_step_len, models, models_names, instance=0, excluded_dims=None, n=None, n_steps=None):
     """Function executes experiment for one selected configuration agains one dataset"""
     file_path = os.sep.join(os.path.abspath(__file__).split(os.sep)[:-2] + [f"..{os.sep}datasets{os.sep}dataset.csv"])
     dataset = pd.read_csv(file_path, low_memory=False)
@@ -95,7 +90,11 @@ def test(models, models_names, instance=0, excluded_dims=None, n=None, n_steps=N
     df = pd.DataFrame({}, index=dataset.index)
     df["power"] = dataset[f"{instance}_Power"]
     df.fillna(0, inplace=True)
-    swe = SWE(latitude_degrees=latitude_degrees, longitude_degrees=longitude_degrees)
+    swe = SWE(forecasting_horizon=forecasting_horizon,
+              latitude_degrees=latitude_degrees,
+              longitude_degrees=longitude_degrees,
+              prediction_step_len=prediction_step_len)
+
     swe.register_dataset(df)
 
     # sample model. register_model takes several arguments that configures test. Remember to set "model name" since it
@@ -115,9 +114,9 @@ def test(models, models_names, instance=0, excluded_dims=None, n=None, n_steps=N
     # select metrics for model evaluations
     swe.register_metric(mean_absolute_error, "MAE")
     swe.register_metric(mean_squared_error, "MSE")
-    # swe.register_metric(mean_absolute_percentage_error, "MAPE")
     swe.register_metric(max_error, "ME")
 
+    swe.summary()
     # run test and store results in metrics_df.
     predict_df,metrics_df,learning_window_length = swe()
     predict_df = predict_df[learning_window_length:]
@@ -128,7 +127,7 @@ def powerset(l):
     for sl in product(*[[[], [i]] for i in l]):
         yield {j for i in sl for j in i}
 
-def main(models, n_values, n_steps_values, instance_values, covered_dimensions, excluded_dimensions):
+def main(forecasting_horizons, prediction_step_len, models, n_values, n_steps_values, instance_values, covered_dimensions, excluded_dimensions):
     """
     Function consumes list of arguments that can be passed to test function. Those include models (list of models to be
     evaluated), n_values (number of past samples to be treated as input dimensions), n_steps_values (lag size time difference between
@@ -183,15 +182,17 @@ def main(models, n_values, n_steps_values, instance_values, covered_dimensions, 
         excluded_plus_covered_dims[i] = list(excluded_plus_covered_dims[i]) + excluded_dimensions
 
     experiment_configs = [
-        {"n": n, "n_steps": n_steps, "instance": instance, "excluded_dims": ed}
-        for n, n_steps, instance,ed in product(n_values, n_steps_values, instance_values, excluded_plus_covered_dims)
+        {"fh":fh, "n": n, "n_steps": n_steps, "instance": instance, "excluded_dims": ed}
+        for fh, n, n_steps, instance, ed in product(forecasting_horizons, n_values, n_steps_values, instance_values, excluded_plus_covered_dims)
     ]
 
     first = True
     for i,config in enumerate(experiment_configs):
-        print(f"Running experiment: n={config['n']}, n_steps={config['n_steps']}, instance={config['instance']}")
+        print(f"Running experiment: fh={config['fh']} n={config['n']}, n_steps={config['n_steps']}, instance={config['instance']}")
         try:
             prediction_df, metrics_df = test(
+                forecasting_horizon=config['fh'],
+                prediction_step_len=prediction_step_len,
                 n=config["n"],
                 models=[m[0] for m in models],
                 models_names=[m[1] for m in models],
@@ -213,7 +214,7 @@ def main(models, n_values, n_steps_values, instance_values, covered_dimensions, 
         for k in config:
             metrics_df[k] = str(config[k])
 
-        base_cols = ["instance", "n", "n_steps"]
+        base_cols = ["instance", "n", "n_steps", "fh"]
         if "name" in metrics_df.columns:
             base_cols = ["name"] + base_cols
 
@@ -223,6 +224,7 @@ def main(models, n_values, n_steps_values, instance_values, covered_dimensions, 
         cols = base_cols + [col for col in metrics_df.columns if col not in base_cols]
         metrics_df = metrics_df[cols]
 
+        print("metric.columns", metrics_df.columns)
         predictions_path = f"cm/{ts}_prediction_{i}_.csv" #set prediction file path
         metrics_df["prediction_path"] = predictions_path #make relation between aggregated results and predictions paths
         metrics_df.to_csv(csv_path, mode='a', index=True, header=first)
@@ -233,62 +235,80 @@ def main(models, n_values, n_steps_values, instance_values, covered_dimensions, 
     print("Main done.")
 
 if __name__ == "__main__":
-    # main(models = [
-    #         (lambda *args: KNeighborsRegressor(10), "KNN(10)"),
-    #         (lambda *args: make_pipeline(PolynomialFeatures(12), LinearRegression()), "LR(12)"),
-    #         (lambda *args: make_pipeline(PolynomialFeatures(16), LinearRegression()), "LR(16)"),
-    #         (lambda *args: RandomForestRegressor(), "RF")
-    #     ],
-    #     instance_values = [
-    #         0, 1, 2
-    #     ],
-    #     n_values = [
-    #         None #1  #, 56, 84
-    #     ], n_steps_values = [None],
-    #     #covered_dimensions={"Elevation", "y", "SolarDay%"}
-    #     covered_dimensions={"y","SolarDay%", "Declination", "Elevation"},
-    #     excluded_dimensions=[]
-    # )
+    parser = argparse.ArgumentParser(
+        prog='Experiment',
+        description='Program performs experiments. It iterate over all provided combinations of forecasting horizons, '
+                    'different models, data sets, n-values, n_steps and dimensions (fetures). This script does not use '
+                    'any arguments. This message is only for information. The results of this script execution are saved '
+                    'in \'cm\' directory. Output consists of two types files the \'concat\' files contains aggregated '
+                    'model results, while \'prediction\' files contain prediction results. The results can be processed '
+                    'by Results Analysis script (problem_analysis_results).')
+    args = parser.parse_args()
+    parser.print_help()
 
-    # main(models = [
-    #         (lambda n,dims,: ModelCNN(input_shape=(n,dims), output_shape=1), "CNN"),
-    #         (lambda n,dims,: ModelLSTM(input_shape=(n,dims), output_shape=1), "LSTM"),
-    #         (lambda n,dims,: ModelMLP(input_shape=(n,dims), output_shape=1), "MLP"),
+    main(
+        forecasting_horizons=[72,144,288], #24h
+        prediction_step_len=72, #it must be equal to the shortest forecasting horizon
+        models = [
+            (lambda *args: KNeighborsRegressor(10), "KNN(10)"),
+            (lambda *args: make_pipeline(PolynomialFeatures(12), LinearRegression()), "LR(12)"),
+            (lambda *args: make_pipeline(PolynomialFeatures(16), LinearRegression()), "LR(16)"),
+            (lambda *args: RandomForestRegressor(), "RF")
+        ],
+        instance_values = [
+            0, 1, 2
+        ],
+        n_values = [
+            None #1  #, 56, 84
+        ], n_steps_values = [None],
+        covered_dimensions={"y","SolarDay%", "Declination", "Elevation"},
+        excluded_dimensions=[]
+    )
+
+    main(
+        forecasting_horizons=[72, 144, 288],  # 24h
+        prediction_step_len=72,  # it must be equal to the shortest forecasting horizon
+        models = [
+            (lambda n,dims,: ModelCNN(input_shape=(n,dims), output_shape=1), "CNN"),
+            (lambda n,dims,: ModelLSTM(input_shape=(n,dims), output_shape=1), "LSTM"),
+            (lambda n,dims,: ModelMLP(input_shape=(n,dims), output_shape=1), "MLP"),
+        ],
+        instance_values = [
+            0, 1, 2
+        ],
+        n_values = [
+            10, 30
+        ], n_steps_values = [28],
+        covered_dimensions={"y", "Declination", "SolarDay%", "Elevation"},
+        excluded_dimensions=[]
+    )
+
+    # there is a list of other deep learning models that can be evaluated
+    # main(
+    #     forecasting_horizon=288,
+    #     models=[
+    #         #(lambda n, dims,: DeepResidualCNN_ComplexV2(input_shape=(n, dims), output_shape=1), "DeepResidualCNN_ComplexV2"),
+    #         #(lambda n, dims,: DeepResidualCNN_Regularized(input_shape=(n, dims), output_shape=1), "DeepResidualCNN_Regularized"),
+    #         #(lambda n, dims,: DeepMLP_ComplexV1(input_shape=(n, dims), output_shape=1), "DeepMLP_ComplexV1"),
+    #         #(lambda n, dims,: DeepMLP_ComplexV2(input_shape=(n, dims), output_shape=1), "DeepMLP_ComplexV2"),
+    #         (lambda n, dims,: EnsembleNetwork(input_shape=(n, dims), output_shape=1), "EnsembleNetwork"),
+    #         (lambda n, dims,: TransformerEncoder(input_shape=(n, dims), output_shape=1), "TransformerEncoder"),
+    #         (lambda n, dims,: DenseResNet(input_shape=(n, dims), output_shape=1), "DenseResNet"),
+    #         (lambda n, dims,: AttentionLSTM(input_shape=(n, dims), output_shape=1), "AttentionLSTM"),
+    #         (lambda n, dims,: AdvancedHybrid(input_shape=(n, dims), output_shape=1), "AdvancedHybrid"),
+    #         (lambda n, dims,: BidirectionalLSTM(input_shape=(n, dims), output_shape=1), "BidirectionalLSTM"),
+    #         (lambda n, dims,: DeepMLP(input_shape=(n, dims), output_shape=1), "DeepMLP"),
+    #         (lambda n, dims,: HybridCNNLSTM(input_shape=(n, dims), output_shape=1), "HybridCNNLSTM"),
+    #         (lambda n, dims,: BasicGRU(input_shape=(n, dims), output_shape=1), "BasicGRU")
     #     ],
-    #     instance_values = [
-    #         0, 1, 2
+    #     instance_values=[
+    #         0
     #     ],
-    #     n_values = [
-    #         10, 30
-    #     ], n_steps_values = [28],
+    #     n_values=[
+    #         10
+    #     ], n_steps_values=[28],
     #     # covered_dimensions={},
     #     covered_dimensions={"y", "Declination", "SolarDay%", "Elevation"},
     #     excluded_dimensions=[]
     # )
-
-    main(models=[
-        #(lambda n, dims,: DeepResidualCNN_ComplexV2(input_shape=(n, dims), output_shape=1), "DeepResidualCNN_ComplexV2"),
-        #(lambda n, dims,: DeepResidualCNN_Regularized(input_shape=(n, dims), output_shape=1), "DeepResidualCNN_Regularized"),
-        #(lambda n, dims,: DeepMLP_ComplexV1(input_shape=(n, dims), output_shape=1), "DeepMLP_ComplexV1"),
-        #(lambda n, dims,: DeepMLP_ComplexV2(input_shape=(n, dims), output_shape=1), "DeepMLP_ComplexV2"),
-        (lambda n, dims,: EnsembleNetwork(input_shape=(n, dims), output_shape=1), "EnsembleNetwork"),
-        (lambda n, dims,: TransformerEncoder(input_shape=(n, dims), output_shape=1), "TransformerEncoder"),
-        (lambda n, dims,: DenseResNet(input_shape=(n, dims), output_shape=1), "DenseResNet"),
-        (lambda n, dims,: AttentionLSTM(input_shape=(n, dims), output_shape=1), "AttentionLSTM"),
-        (lambda n, dims,: AdvancedHybrid(input_shape=(n, dims), output_shape=1), "AdvancedHybrid"),
-        (lambda n, dims,: BidirectionalLSTM(input_shape=(n, dims), output_shape=1), "BidirectionalLSTM"),
-        (lambda n, dims,: DeepMLP(input_shape=(n, dims), output_shape=1), "DeepMLP"),
-        (lambda n, dims,: HybridCNNLSTM(input_shape=(n, dims), output_shape=1), "HybridCNNLSTM"),
-        (lambda n, dims,: BasicGRU(input_shape=(n, dims), output_shape=1), "BasicGRU")
-    ],
-        instance_values=[
-            0
-        ],
-        n_values=[
-            10
-        ], n_steps_values=[28],
-        # covered_dimensions={},
-        covered_dimensions={"y", "Declination", "SolarDay%", "Elevation"},
-        excluded_dimensions=[]
-    )
 

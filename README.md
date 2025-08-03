@@ -27,27 +27,46 @@ To display dataset as interactive chart. Use arrows to move over the data.
 ```
 (.venv):~/$python  examples/problem_analysis_database_looker.py
 ```
-
-To display and create files containing images and statistics used in article
+To create latex table that describes dataset the following script can be executed
 ```
-(.venv):~/$python  examples/paper_experiment_weather_statistics.py
-```
-
-## Experiments
-
-ACI forecasting experiment. Script displays charts and stores statistics in a file `cm/paper_experiment_aci_forecaster.tex`
-```
-    (.venv):~/$python  examples/paper_experiment_aci_forecasting.py
+(.venv):~/$python examples/db_stats.py
 ```
 
-Polinomial Regression, KNN and Random Forest experiment:
+## Experiments (full version)
+The following scrit crates and runs experiments that were used in the research. During tests its execution took 50hours.
+For checking purposes we recommend to refer to Experiments (shorted version) section
 ```
-    (.venv):~/$python  examples/ecai_experiments/problem_analysis_classic_min.py
+   (.venv):~/$python  examples/experiments/problem_analysis_run_experiment.py
 ```
 
-Deep learning experiments:
+## Experiments (shorted version)
+The following scrit crates and runs on linear regression and random forest models (a part of experiments)
 ```
-    (.venv):~/$python  examples/ecai_experiments/problem_analysis_deep_min.py
+   (.venv):~/$python  examples/experiments/problem_analysis_run_experiment_min.py
 ```
-For more information about used ANN architectures refer to `examples/ecai_experiments/model_wrappers.py`.
+
+## Experiments results processing 
+once any of experimental script finish its execution results will be stored in ```cm``` directory. Results
+consists of 'concat' and 'prediction' files. The preferable way to work with results is first to move them to dedicated 
+directory e.g. ```cm/all``` and after that transform them into more useful form
+use the following script. 
+
+```
+   (.venv):~/$python  examples/experiments/problem_analysis_results.py cm/all cm/sa.csv
+```
+
+The executed script creates file ```cm/sa.csv``` that stores model comparision table with calculated
+improvement ratios and Welch's tests.
+
+## Experiments result tables generation
+Most of the tables used in article were generated automatically based on ```cm/sa.csv``` file. script   
+```
+   (.venv):~/$python  examples/experiments/problem_analysis_results_table.py cm/all cm/sa.csv
+```
+was used for this purpose. 
+
+## Extras
+
+For more information about used ANN architectures refer to `ANN/model_wrappers.py`. However, the use of the
+architectures proposed was limited by the hardware possibilities.
 
