@@ -1,7 +1,4 @@
-# One-Day-Ahead Photovoltaic Power Prediction 
-
-Repository contains code and dataset supporting research "One-Day-Ahead Photovoltaic Power Prediction Based on
-Local Weather Properties Analysis" ECAI'2025
+# Short- and Medium-term Horizon Photovoltaic Power Forecasting Based on Terrestrial Solar Radiation Features
 
 ## Initialization
 At the very beginning the python venv must be initialized and packages listed in requirements.txt needs to be installed.
